@@ -25,6 +25,8 @@ function App() {
   const [selectedChat, setSelectedChat] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
   const [editingChat, setEditingChat] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedTag, setSelectedTag] = useState('全部');
@@ -35,13 +37,9 @@ function App() {
     if (loggedIn === 'true') {
       setIsLoggedIn(true);
     }
+    // 加载数据不需要登录
+    loadChats();
   }, []);
-
-  useEffect(() => {
-    if (isLoggedIn) {
-      loadChats();
-    }
-  }, [isLoggedIn]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -49,6 +47,13 @@ function App() {
       setIsLoggedIn(true);
       localStorage.setItem('isLoggedIn', 'true');
       setError('');
+      setShowPasswordModal(false);
+      setPassword('');
+      // 执行待处理的操作
+      if (pendingAction) {
+        pendingAction();
+        setPendingAction(null);
+      }
     } else {
       setError('访问密码错误');
     }
@@ -58,6 +63,15 @@ function App() {
     setIsLoggedIn(false);
     localStorage.removeItem('isLoggedIn');
     setSelectedChat(null);
+  };
+
+  const requirePassword = (action) => {
+    if (isLoggedIn) {
+      action();
+    } else {
+      setPendingAction(() => action);
+      setShowPasswordModal(true);
+    }
   };
 
   const loadChats = async () => {
@@ -164,39 +178,6 @@ function App() {
 
   const tagCounts = getTagCounts();
 
-  if (!isLoggedIn) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-sm">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold text-gray-800">AI 对话收藏夹</h1>
-            <p className="text-sm text-gray-500 mt-1">请输入访问密码</p>
-          </div>
-          <form onSubmit={handleLogin}>
-            <input
-              type="password"
-              placeholder="请输入访问密码"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all mb-4"
-            />
-            {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
-            <button
-              type="submit"
-              className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
-            >
-              访问
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -205,16 +186,18 @@ function App() {
         <div className="flex items-center gap-3">
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            onClick={() => setShowModal(true)}
+            onClick={() => requirePassword(() => setShowModal(true))}
           >
             + 添加链接
           </button>
-          <button
-            onClick={handleLogout}
-            className="px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors text-sm"
-          >
-            退出
-          </button>
+          {isLoggedIn && (
+            <button
+              onClick={handleLogout}
+              className="px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+            >
+              退出
+            </button>
+          )}
         </div>
       </header>
 
@@ -291,7 +274,10 @@ function App() {
                     <div className="flex gap-2">
                       <button
                         className="px-2 py-1 text-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                        onClick={(e) => openEditModal(chat, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          requirePassword(() => openEditModal(chat, e));
+                        }}
                       >
                         编辑
                       </button>
@@ -299,7 +285,7 @@ function App() {
                         className="px-2 py-1 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteChat(chat.id);
+                          requirePassword(() => handleDeleteChat(chat.id));
                         }}
                       >
                         删除
@@ -369,11 +355,50 @@ function App() {
               </button>
             </div>
             <div className="p-6">
-              <AddChatForm 
-                onAdd={handleEditChat} 
-                existingTags={allTags} 
+              <AddChatForm
+                onAdd={handleEditChat}
+                existingTags={allTags}
                 initialData={editingChat}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPasswordModal(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-800">需要密码验证</h2>
+              <button
+                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                onClick={() => setShowPasswordModal(false)}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleLogin}>
+                <input
+                  type="password"
+                  placeholder="请输入访问密码"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all mb-4"
+                />
+                {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
+                >
+                  确认
+                </button>
+              </form>
             </div>
           </div>
         </div>
